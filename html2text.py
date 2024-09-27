@@ -5,29 +5,36 @@ __author__ = "Aaron Swartz (me@aaronsw.com)"
 __copyright__ = "(C) 2004-2008 Aaron Swartz. GNU GPL 3."
 __contributors__ = ["Martin 'Joey' Schulze", "Ricardo Reyes", "Kevin Jay North"]
 
-from dataclasses import dataclass, field
-from html import entities as htmlentitydefs
+from dataclasses import dataclass
 from html.parser import HTMLParser
 from urllib.parse import urlparse
-import re
 import sys
 import argparse
+import re
 
-# Configuration options
 @dataclass(frozen=True)
 class Config:
-    unicode_snob: int = 0
-    escape_snob: int = 0
-    links_each_paragraph: int = 0
-    body_width: int = 78
-    skip_internal_links: bool = True
-    inline_links: bool = True
-    google_list_indent: int = 36
-    ignore_links: bool = False
-    ignore_images: bool = False
-    ignore_emphasis: bool = False
+    unicode_snob: int
+    escape_snob: int
+    ignore_links: bool
+    ignore_images: bool
+    google_doc: bool
+    dash_unordered_list: bool
+    body_width: int
+    google_list_indent: int
+    hide_strikethrough: bool
 
-config = Config()
+default_config = Config(
+    unicode_snob=0,
+    escape_snob=0,
+    ignore_links=False,
+    ignore_images=False,
+    google_doc=False,
+    dash_unordered_list=False,
+    body_width=78,
+    google_list_indent=36,
+    hide_strikethrough=False
+)
 
 unifiable = {
     'rsquo': "'", 'lsquo': "'", 'rdquo': '"', 'ldquo': '"',
@@ -43,51 +50,55 @@ unifiable = {
 }
 
 class HTML2Text(HTMLParser):
-    def __init__(self, baseurl: str = ''):
+    def __init__(self, baseurl=''):
         super().__init__()
         self.baseurl = baseurl
-        self.outtextlist: list[str] = []
-        self.current_output: str = ''
-        self.stack: list[str] = []
+        self.outtextlist = []
+        self.current_output = ''
+        self.stack = []
         self.absolute_url_matcher = re.compile(r'^[a-zA-Z+]+://')
 
-    def handle(self, data: str) -> str:
+    def handle(self, data):
         self.feed(data.replace("</script>", "</ignore>"))
         return ''.join(self.outtextlist)
 
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str]]):
+    def handle_starttag(self, tag, attrs):
         self.stack.append(tag)
-        # Handle various tags...
 
-    def handle_endtag(self, tag: str):
+    def handle_endtag(self, tag):
         if tag in self.stack:
             self.stack.remove(tag)
 
-    def handle_data(self, data: str):
+    def handle_data(self, data):
         self.outtextlist.append(data)
 
-def parse_args() -> Config:
+def parse_args():
     parser = argparse.ArgumentParser(description="Convert HTML to Markdown.")
-    parser.add_argument("-u", "--unicode", action="store_true", help="Enable unicode support")
-    parser.add_argument("-e", "--escape", action="store_true", help="Escape HTML entities")
-    parser.add_argument("-l", "--links", action="store_true", help="Include links in the output")
-    parser.add_argument("-i", "--images", action="store_true", help="Include images in the output")
-    parser.add_argument("-em", "--emphasis", action="store_true", help="Include emphasis formatting")
+    parser.add_argument("--ignore-links", action="store_true", help="Don't include any formatting for links")
+    parser.add_argument("--ignore-images", action="store_true", help="Don't include any formatting for images")
+    parser.add_argument("-g", "--google-doc", action="store_true", help="Convert an HTML-exported Google Document")
+    parser.add_argument("-d", "--dash-unordered-list", action="store_true", help="Use dash for unordered list items")
+    parser.add_argument("-b", "--body-width", type=int, help="Number of characters per output line")
+    parser.add_argument("-i", "--google-list-indent", type=int, help="Pixels Google indents nested lists")
+    parser.add_argument("-s", "--hide-strikethrough", action="store_true", help="Hide strike-through text")
     return parser.parse_args()
+
+def config_from_args(args):
+    return Config(
+        unicode_snob=default_config.unicode_snob,
+        escape_snob=default_config.escape_snob,
+        ignore_links=args.ignore_links,
+        ignore_images=args.ignore_images,
+        google_doc=args.google_doc,
+        dash_unordered_list=args.dash_unordered_list,
+        body_width=args.body_width or default_config.body_width,
+        google_list_indent=args.google_list_indent or default_config.google_list_indent,
+        hide_strikethrough=args.hide_strikethrough
+    )
 
 def main():
     args = parse_args()
-    if args.unicode:
-        config = config._replace(unicode_snob=1)
-    if args.escape:
-        config = config._replace(escape_snob=1)
-    if args.links:
-        config = config._replace(ignore_links=False)
-    if args.images:
-        config = config._replace(ignore_images=False)
-    if args.emphasis:
-        config = config._replace(ignore_emphasis=False)
-
+    config = config_from_args(args)
     html_data = sys.stdin.read()
     converter = HTML2Text()
     textmod = converter.handle(html_data)
